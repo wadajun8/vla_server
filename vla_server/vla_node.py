@@ -12,8 +12,11 @@ import torch
 import numpy as np
 import clip
 import math
+from sensor_msgs.msg import Image
+from geometry_msgs.msg import Twist
+from std_msgs.msg import String
 
-# 🔍 汎用パス探索関数
+# 汎用パス探索関数
 def get_workspace_root():
     current_dir = os.path.abspath(os.path.dirname(__file__))
     while current_dir != '/':
@@ -51,12 +54,13 @@ class VLAServer(Node):
         )
         self.model = self.model.to(self.device).eval()
         self.text_encoder = self.text_encoder.to(self.device).eval()
-        self.get_logger().info('🎉 AIモデルの読み込み完了！')
+        self.get_logger().info('VLAモデルの読み込み完了')
 
         # 📡 ROS 2 通信設定
         self.bridge = CvBridge()
         self.subscription = self.create_subscription(Image, '/camera/color/image_raw', self.image_callback, 1)
         self.cmd_vel_pub = self.create_publisher(Twist, '/vla/cmd_vel', 1)
+        self.inst_sub = self.create_subscription(String, '/vla/instruction', self.instruction_callback, 10)
 
         # ⚙️ AI用パラメータ
         self.imgsize_96 = (96, 96)
@@ -75,7 +79,14 @@ class VLAServer(Node):
         self.last_inference_time = 0.0
         self.inference_interval = 1.0 
 
-        self.get_logger().info('👀 カメラ映像待機中... 思考を開始します')
+        self.get_logger().info('カメラ映像待機中')
+
+    # 葉を受け取った時に呼ばれる関数
+    def instruction_callback(self, msg):
+        # 今の指示と違う言葉が来た時だけ更新する
+        if self.current_instruction != msg.data:
+            self.current_instruction = msg.data
+            self.get_logger().info(f'新しい指示: [{self.current_instruction}]')
 
     def image_callback(self, msg):
         current_time = time.time()
@@ -100,10 +111,10 @@ class VLAServer(Node):
             self.context_queue.pop(0)
         # 6枚溜まるまでは動かない
         if len(self.context_queue) < 6:
-            self.get_logger().info(f'🔄 記憶バッファ充填中... ({len(self.context_queue)}/6)')
+            self.get_logger().info(f'記憶バッファ充填中 ({len(self.context_queue)}/6)')
             return
 
-        self.get_logger().info(f'🤔 推論中... 指示: [{self.current_instruction}]')
+        self.get_logger().info(f'推論中 指示: [{self.current_instruction}]')
 
         # ==========================================
         # 🏃 OmniVLA 推論プロセス
@@ -170,7 +181,7 @@ class VLAServer(Node):
             angular_vel = np.arctan(dy / dx) / DT
 
         # モータへの過負荷を防ぐための制限（クリッピング）
-        linear_vel = float(np.clip(linear_vel, 0.0, 3))
+        linear_vel = float(np.clip(linear_vel, 0.0, 0.3))
         angular_vel = float(np.clip(angular_vel, -0.5, 0.5))
 
         # Twist送信
