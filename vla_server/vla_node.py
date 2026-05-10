@@ -34,9 +34,9 @@ sys.path.insert(0, os.path.join(omnivla_path, "inference"))
 from utils_policy import load_model, transform_images_map, transform_images_PIL_mask
 
 class VLAServer(Node):
-    def __init__(self):
+    def __init__(self, initial_instruction):
         super().__init__('vla_server')
-        self.get_logger().info('🧠 VLAノードを起動中... モデルを読み込みます')
+        self.get_logger().info('VLAノード起動中...')
 
         self.device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
         self.model_weights_path = os.path.join(ws_root, "models/omnivla-edge/omnivla-edge.pth")
@@ -59,13 +59,14 @@ class VLAServer(Node):
         # 📡 ROS 2 通信設定
         self.bridge = CvBridge()
         self.subscription = self.create_subscription(Image, '/camera/color/image_raw', self.image_callback, 1)
-        self.cmd_vel_pub = self.create_publisher(Twist, '/vla/cmd_vel', 1)
+        # cmd_velをパブリッシュ
+        self.cmd_vel_pub = self.create_publisher(Twist, '/cmd_vel', 1)
         self.inst_sub = self.create_subscription(String, '/vla/instruction', self.instruction_callback, 10)
 
         # ⚙️ AI用パラメータ
         self.imgsize_96 = (96, 96)
         self.imgsize_224 = (224, 224)
-        self.current_instruction = "blue trash bin" # 言語指示
+        self.current_instruction = initial_instruction # 言語指示
         self.metric_waypoint_spacing = 0.1 # 距離スケール
 
         # マスク（カメラ視野外の黒塗り用ですが、今回は全白で透過）
@@ -190,11 +191,21 @@ class VLAServer(Node):
         cmd_msg.angular.z = angular_vel
         self.cmd_vel_pub.publish(cmd_msg)
         
-        self.get_logger().info(f'🚀 速度出力: 前進={linear_vel:.2f}, 旋回={angular_vel:.2f}')
+        self.get_logger().info(f'速度出力: 前進={linear_vel:.2f}, 旋回={angular_vel:.2f}')
 
 def main(args=None):
+    passed_args = [arg for arg in sys.argv[1:] if not arg.startswith('-')]
+
+    if len(passed_args) > 0:
+        initial_instruction = " ".join(passed_args)
+        print(f"指示: [{initial_instruction}]")
+    else:
+        user_input = input ("指示待ち中: ")
+        initial_instruction = user_input.strip() if user_input.strip() else "sty"
+
     rclpy.init(args=args)
-    vla_node = VLAServer()
+    vla_node = VLAServer(initial_instruction)
+
     try:
         rclpy.spin(vla_node)
     except KeyboardInterrupt:
