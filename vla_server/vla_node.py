@@ -1,5 +1,5 @@
+# SPDX-FileCopyrightText: 2026 Junya Wada
 # SPDX-License-Identifier: BSD-3-Clause
-# Copyright (c) 2026 Junya Wada
 
 import rclpy
 from rclpy.node import Node
